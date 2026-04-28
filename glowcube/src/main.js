@@ -11,6 +11,7 @@ import fragmentShader from './assets/shaders/fragment.glsl';
 
 let renderer, scene, camera, clock;
 let handLeft, handRight;
+let controllerLeft, controllerRight;
 
 let rThumbObj, rIndexObj, lThumbObj, lIndexObj;
 let rPinchSphere, lPinchSphere;
@@ -19,6 +20,8 @@ let rPinchOn = false;
 let scalingOn = false;
 let lJointsTracked = false;
 let rJointsTracked = false;
+let lControllerSelecting = false;
+let rControllerSelecting = false;
 
 let tempCube, box, boxMaterial;
 let world, cubeShape, cubeBody;
@@ -27,6 +30,7 @@ let previousTime = 0;
 
 const PINCH_START = 0.022;
 const PINCH_END = 0.035;
+const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
 
 // -----------------------------------------------------------------------------
 // Init
@@ -70,6 +74,7 @@ function init() {
 
   //Virtual hands
   setupHands();
+  setupControllers();
 
   // Physics world + cube
   setupPhysics();
@@ -133,6 +138,50 @@ function setupHands() {
   handLeft = renderer.xr.getHand(1);
   scene.add(handLeft);
 
+}
+
+function setupControllers() {
+  controllerRight = renderer.xr.getController(0);
+  controllerRight.addEventListener('selectstart', () => {
+    rControllerSelecting = true;
+    debugLog('controller 0 selectstart');
+  });
+  controllerRight.addEventListener('selectend', () => {
+    rControllerSelecting = false;
+    debugLog('controller 0 selectend');
+  });
+  controllerRight.addEventListener('connected', event => {
+    debugLog('controller 0 connected', describeInputSource(event.data));
+  });
+  scene.add(controllerRight);
+
+  controllerLeft = renderer.xr.getController(1);
+  controllerLeft.addEventListener('selectstart', () => {
+    lControllerSelecting = true;
+    debugLog('controller 1 selectstart');
+  });
+  controllerLeft.addEventListener('selectend', () => {
+    lControllerSelecting = false;
+    debugLog('controller 1 selectend');
+  });
+  controllerLeft.addEventListener('connected', event => {
+    debugLog('controller 1 connected', describeInputSource(event.data));
+  });
+  scene.add(controllerLeft);
+
+  renderer.xr.addEventListener('sessionstart', () => {
+    const session = renderer.xr.getSession();
+    debugLog('xr sessionstart', {
+      mode: 'immersive-vr',
+      inputSources: session ? Array.from(session.inputSources).map(describeInputSource) : []
+    });
+  });
+
+  renderer.xr.addEventListener('sessionend', () => {
+    lControllerSelecting = false;
+    rControllerSelecting = false;
+    debugLog('xr sessionend');
+  });
 }
 
 function setupPhysics() {
@@ -260,9 +309,13 @@ function updateJointReferences() {
 function updatePinchState() {
   const rDist = rJointsTracked ? rIndexObj.position.distanceTo(rThumbObj.position) : Infinity;
   const lDist = lJointsTracked ? lIndexObj.position.distanceTo(lThumbObj.position) : Infinity;
+  const rFallbackPinch = !rJointsTracked && rControllerSelecting && updateFallbackPinch(controllerRight, rThumbObj, rIndexObj);
+  const lFallbackPinch = !lJointsTracked && lControllerSelecting && updateFallbackPinch(controllerLeft, lThumbObj, lIndexObj);
 
   // Right pinch
-  if (!rPinchOn && rDist < PINCH_START) {
+  if (rFallbackPinch) {
+    rPinchOn = true;
+  } else if (!rPinchOn && rDist < PINCH_START) {
     rPinchOn = true;
   } else if (rPinchOn && rDist > PINCH_END) {
     rPinchOn = false;
@@ -276,7 +329,9 @@ function updatePinchState() {
   }
 
   // Left pinch
-  if (!lPinchOn && lDist < PINCH_START) {
+  if (lFallbackPinch) {
+    lPinchOn = true;
+  } else if (!lPinchOn && lDist < PINCH_START) {
     lPinchOn = true;
   } else if (lPinchOn && lDist > PINCH_END) {
     lPinchOn = false;
@@ -296,6 +351,35 @@ function isJointTracked(joint) {
     Number.isFinite(joint.position?.y) &&
     Number.isFinite(joint.position?.z) &&
     joint.visible !== false;
+}
+
+function updateFallbackPinch(controller, thumbObj, indexObj) {
+  if (!controller) return false;
+
+  controller.updateMatrixWorld(true);
+  controller.getWorldPosition(thumbObj.position);
+  indexObj.position.copy(thumbObj.position);
+  return true;
+}
+
+function describeInputSource(inputSource) {
+  if (!inputSource) return null;
+
+  return {
+    handedness: inputSource.handedness || 'none',
+    targetRayMode: inputSource.targetRayMode || 'unknown',
+    hasHand: !!inputSource.hand,
+    profiles: inputSource.profiles || []
+  };
+}
+
+function debugLog(message, data = null) {
+  if (!DEBUG_XR) return;
+  if (data === null) {
+    console.log(`[glowcube-vr] ${message}`);
+  } else {
+    console.log(`[glowcube-vr] ${message}`, data);
+  }
 }
 
 function handleScalingLogic() {
