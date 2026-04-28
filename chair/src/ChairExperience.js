@@ -919,7 +919,17 @@ export class ChairExperience {
         this.chairModel.rotation.y += deltaRot;
       };
       this.handInput.update(delta, {
-        chairModel: this.chairModel
+        chairModel: this.chairModel,
+        pointerTargets: [
+          this.switchButton,
+          this.headerToggle,
+          this.colorPanel,
+          this.button1Mesh,
+          this.button2Mesh,
+          this.button3Mesh,
+          this.infoPanel,
+          this.chairModel
+        ]
       });
     }
 

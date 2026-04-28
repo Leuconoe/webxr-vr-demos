@@ -221,7 +221,20 @@ xrSetup.setAnimationLoop(function() {
         colorCircleOpen: uiColorPicker.isColorCircleOpen(),
         colorCircleOrigin: uiColorPicker.getColorCircleOrigin(),
         closeButtonPlane: uiColorPicker.getCloseButtonPlane(),
-        setColorCircleOpen: (value) => uiColorPicker.setColorCircleOpen(value)
+        setColorCircleOpen: (value) => uiColorPicker.setColorCircleOpen(value),
+        pointerTargets: [
+            models.getProductModel(),
+            models.getCloudModel(),
+            button,
+            groundPlane,
+            uiHeader.getHeader(),
+            uiTagsCloud.getHeaderTags(),
+            uiColorPicker.getColorButton(),
+            uiColorPicker.getColorCircleOrigin(),
+            uiColorPicker.getColorCircleDot(),
+            uiColorPicker.getCloseButtonPlane(),
+            ...uiTagsCloud.cachedDotPlanes
+        ]
     };
     
     handInput.update(handContext);
@@ -245,8 +258,8 @@ xrSetup.setAnimationLoop(function() {
 
 function handleInteractions() {
     const currentTime = Date.now();
-    const lIndexObj = handInput.lIndexObj;
-    const rIndexObj = handInput.rIndexObj;
+    const lIndexObj = handInput.getLeftIndexObject();
+    const rIndexObj = handInput.getRightIndexObject();
     
     // Button touch detection
     const buttonWorldPosition = new THREE.Vector3();

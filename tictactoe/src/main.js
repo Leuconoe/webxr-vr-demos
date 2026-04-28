@@ -346,7 +346,10 @@ async function startApp(xModelTemplate, oModelTemplate) {
   
     gsap.ticker.tick(delta);
   
-    handInput.update(delta);
+    handInput.update([
+      ...boardView.getPickTargets(),
+      endGameUI.getButtonPlane()
+    ]);
     positionCompositionAtHeadHeight();
   
     renderer.render(scene, camera);

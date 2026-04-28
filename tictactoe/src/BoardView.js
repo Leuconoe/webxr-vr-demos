@@ -151,6 +151,24 @@ export class BoardView {
     return minDist < PICK_THRESHOLD ? nearest : null;
   }
 
+  getPickTargets() {
+    const targets = [];
+    if (!this.baseGrid) return targets;
+
+    this.baseGrid.traverse((child) => {
+      if (
+        child.isMesh &&
+        child.name &&
+        child.name.startsWith('Sphere_') &&
+        child.visible
+      ) {
+        targets.push(child);
+      }
+    });
+
+    return targets;
+  }
+
   getGridCoordsFromSphere(sphereUUID) {
     return this.spherePositions.get(sphereUUID) || null;
   }

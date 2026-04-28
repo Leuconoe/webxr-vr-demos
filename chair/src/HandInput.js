@@ -87,6 +87,9 @@ export class HandInput {
 
     // temp vectors
     this._tmp = new THREE.Vector3();
+    this._raycaster = new THREE.Raycaster();
+    this._controllerDirection = new THREE.Vector3();
+    this._controllerQuaternion = new THREE.Quaternion();
   }
 
   _setupController(controller, label, setSelecting) {
@@ -143,10 +146,35 @@ export class HandInput {
       this._isJointTracked(hand.joints['index-finger-tip']);
   }
 
-  _updateFallbackPinch(controller, thumbObj, indexObj) {
-    if (!controller) return false;
+  _getControllerHitPoint(controller, pointerTargets = []) {
+    if (!controller) return null;
+
     controller.updateMatrixWorld(true);
-    controller.getWorldPosition(thumbObj.position);
+    this._raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    controller.getWorldQuaternion(this._controllerQuaternion);
+    this._raycaster.ray.direction
+      .set(0, 0, -1)
+      .applyQuaternion(this._controllerQuaternion)
+      .normalize();
+
+    const targets = pointerTargets.filter(Boolean);
+    if (!targets.length) return null;
+
+    const hits = this._raycaster.intersectObjects(targets, true);
+    return hits.length ? hits[0].point : null;
+  }
+
+  _updateFallbackPinch(controller, thumbObj, indexObj, pointerTargets = []) {
+    if (!controller) return false;
+
+    const hitPoint = this._getControllerHitPoint(controller, pointerTargets);
+    if (hitPoint) {
+      thumbObj.position.copy(hitPoint);
+    } else {
+      controller.updateMatrixWorld(true);
+      controller.getWorldPosition(thumbObj.position);
+    }
+
     indexObj.position.copy(thumbObj.position);
     return true;
   }
@@ -165,7 +193,7 @@ export class HandInput {
    *        opts.chairModel?: THREE.Object3D – used only for rotation callback
    */
   update(delta, opts = {}) {
-    const { chairModel } = opts;
+    const { chairModel, pointerTargets = [] } = opts;
     const leftHand = this._hasTrackedPinchJoints(this.hand1) ? this.hand1 : null;
     const rightHand = this._hasTrackedPinchJoints(this.hand2) ? this.hand2 : null;
     const availableHands = [leftHand, rightHand].filter(Boolean);
@@ -213,7 +241,7 @@ export class HandInput {
         // still track position for interaction logic, just don't show it
         this.lPinchSphere.position.copy(thumb.position);
       }
-    } else if (this.controller1Selecting && this._updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj)) {
+    } else if (this.controller1Selecting && this._updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj, pointerTargets)) {
       this.lPinchOn = true;
       this.lPinchSphere.position.copy(this.lThumbObj.position);
     }
@@ -234,7 +262,7 @@ export class HandInput {
         // still track position for interaction logic, just don't show it
         this.rPinchSphere.position.copy(thumb.position);
       }
-    } else if (this.controller2Selecting && this._updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj)) {
+    } else if (this.controller2Selecting && this._updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj, pointerTargets)) {
       this.rPinchOn = true;
       this.rPinchSphere.position.copy(this.rThumbObj.position);
     }

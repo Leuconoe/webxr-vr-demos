@@ -123,6 +123,8 @@ export function CreateHandTracking({
   const _aWorld = new THREE.Vector3();
   const _bWorld = new THREE.Vector3();
   const _aQuat = new THREE.Quaternion();
+  const _raycaster = new THREE.Raycaster();
+  const _controllerQuat = new THREE.Quaternion();
 
   function IsJointTracked(joint) {
     return !!joint &&
@@ -165,10 +167,35 @@ export function CreateHandTracking({
     }
   }
 
-  function UpdateFallbackPinch(controller, thumbObj, indexObj) {
-    if (!controller) return false;
+  function GetControllerHitPoint(controller, pointerTargets = []) {
+    if (!controller) return null;
+
     controller.updateMatrixWorld(true);
-    controller.getWorldPosition(thumbObj.position);
+    _raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    controller.getWorldQuaternion(_controllerQuat);
+    _raycaster.ray.direction
+      .set(0, 0, -1)
+      .applyQuaternion(_controllerQuat)
+      .normalize();
+
+    const targets = pointerTargets.filter(Boolean);
+    if (!targets.length) return null;
+
+    const hits = _raycaster.intersectObjects(targets, true);
+    return hits.length ? hits[0].point : null;
+  }
+
+  function UpdateFallbackPinch(controller, thumbObj, indexObj, pointerTargets = []) {
+    if (!controller) return false;
+
+    const hitPoint = GetControllerHitPoint(controller, pointerTargets);
+    if (hitPoint) {
+      thumbObj.position.copy(hitPoint);
+    } else {
+      controller.updateMatrixWorld(true);
+      controller.getWorldPosition(thumbObj.position);
+    }
+
     indexObj.position.copy(thumbObj.position);
     return true;
   }
@@ -215,6 +242,17 @@ export function CreateHandTracking({
     const rightHand = hand2;
     let leftTracked = false;
     let rightTracked = false;
+    const pointerTargets = [
+      root,
+      cubeA,
+      cubeB,
+      mainUI,
+      openUIRef,
+      topArrowPlane,
+      bottomArrowPlane,
+      ...(Array.isArray(partUIs) ? partUIs : []),
+      ...(Array.isArray(parts) ? parts : [])
+    ];
 
     // --- Left thumb / index tips ---
     if (leftHand && leftHand.joints) {
@@ -264,7 +302,7 @@ export function CreateHandTracking({
 
     // --- Left pinch detection + grab root when joined ---
     const leftFallbackPinch = !leftTracked && controller1Selecting &&
-      UpdateFallbackPinch(controller1, lThumbObj, lIndexObj);
+      UpdateFallbackPinch(controller1, lThumbObj, lIndexObj, pointerTargets);
     if (leftFallbackPinch && Array.isArray(partUIs)) {
       partUIs.forEach((plane, i) => {
         if (CheckPointPlaneIntersection(lIndexObj.position, plane)) {
@@ -360,7 +398,7 @@ export function CreateHandTracking({
 
     // --- Right pinch detection + grab root when joined ---
     const rightFallbackPinch = !rightTracked && controller2Selecting &&
-      UpdateFallbackPinch(controller2, rThumbObj, rIndexObj);
+      UpdateFallbackPinch(controller2, rThumbObj, rIndexObj, pointerTargets);
     if (rightFallbackPinch && Array.isArray(partUIs)) {
       partUIs.forEach((plane, i) => {
         if (CheckPointPlaneIntersection(rIndexObj.position, plane)) {

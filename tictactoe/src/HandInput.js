@@ -62,6 +62,8 @@ export class HandInput {
     this.PINCH_END = 0.035;
 
     this._initJointRefs();
+    this._raycaster = new THREE.Raycaster();
+    this._controllerQuaternion = new THREE.Quaternion();
   }
 
   _setupController(controller, label, setSelecting) {
@@ -143,9 +145,9 @@ export class HandInput {
   // -----------------------------------
   // Per-frame update
   // -----------------------------------
-  update() {
+  update(pointerTargets = []) {
     this._updateHands();
-    this._processPinches();
+    this._processPinches(pointerTargets);
     this._processButtonHit();
   }
 
@@ -188,10 +190,35 @@ export class HandInput {
       this._isJointTracked(hand?.joints?.['index-finger-tip']);
   }
 
-  _updateFallbackPinch(controller, thumbObj, indexObj) {
-    if (!controller) return false;
+  _getControllerHitPoint(controller, pointerTargets = []) {
+    if (!controller) return null;
+
     controller.updateMatrixWorld(true);
-    controller.getWorldPosition(thumbObj.position);
+    this._raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    controller.getWorldQuaternion(this._controllerQuaternion);
+    this._raycaster.ray.direction
+      .set(0, 0, -1)
+      .applyQuaternion(this._controllerQuaternion)
+      .normalize();
+
+    const targets = pointerTargets.filter(Boolean);
+    if (!targets.length) return null;
+
+    const hits = this._raycaster.intersectObjects(targets, true);
+    return hits.length ? hits[0].point : null;
+  }
+
+  _updateFallbackPinch(controller, thumbObj, indexObj, pointerTargets = []) {
+    if (!controller) return false;
+
+    const hitPoint = this._getControllerHitPoint(controller, pointerTargets);
+    if (hitPoint) {
+      thumbObj.position.copy(hitPoint);
+    } else {
+      controller.updateMatrixWorld(true);
+      controller.getWorldPosition(thumbObj.position);
+    }
+
     indexObj.position.copy(thumbObj.position);
     return true;
   }
@@ -199,19 +226,19 @@ export class HandInput {
   // -----------------------------------
   // Pinch → place O + rotate board
   // -----------------------------------
-  _processPinches() {
-    this._handleHandPinch('left', this.leftHand, this.lThumbObj, this.lIndexObj);
-    this._handleHandPinch('right', this.rightHand, this.rThumbObj, this.rIndexObj);
+  _processPinches(pointerTargets = []) {
+    this._handleHandPinch('left', this.leftHand, this.lThumbObj, this.lIndexObj, pointerTargets);
+    this._handleHandPinch('right', this.rightHand, this.rThumbObj, this.rIndexObj, pointerTargets);
   }
 
-  _handleHandPinch(handName, hand, thumbObj, indexObj) {
+  _handleHandPinch(handName, hand, thumbObj, indexObj, pointerTargets = []) {
     const tracked = this._hasTrackedPinchJoints(hand);
     const controllerSelecting = handName === 'left'
       ? this.leftControllerSelecting
       : this.rightControllerSelecting;
     const controller = handName === 'left' ? this.leftController : this.rightController;
     const fallbackPinch = !tracked && controllerSelecting &&
-      this._updateFallbackPinch(controller, thumbObj, indexObj);
+      this._updateFallbackPinch(controller, thumbObj, indexObj, pointerTargets);
     const wasActive = handName === 'left' ? this.leftRotationActive : this.rightRotationActive;
     const dist = tracked ? thumbObj.position.distanceTo(indexObj.position) : Infinity;
     const isPinching = fallbackPinch || (

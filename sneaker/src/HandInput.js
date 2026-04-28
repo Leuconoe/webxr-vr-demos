@@ -12,6 +12,8 @@ export class HandInput {
         // Pinch state
         this.lPinchOn = false;
         this.rPinchOn = false;
+        this.leftPointerActive = false;
+        this.rightPointerActive = false;
         this.leftPinchPrimed = false;
         this.rightPinchPrimed = false;
         
@@ -48,6 +50,8 @@ export class HandInput {
         this.initPinchReferences();
         this.initHands();
         this.initControllers();
+        this.raycaster = new THREE.Raycaster();
+        this.controllerQuaternion = new THREE.Quaternion();
         
         // Listen to XR session events
         this.renderer.xr.addEventListener('sessionstart', () => this.onSessionStart());
@@ -180,10 +184,35 @@ export class HandInput {
                j.visible !== false;
     }
 
-    updateFallbackPinch(controller, thumbObj, indexObj) {
-        if (!controller) return false;
+    getControllerHitPoint(controller, pointerTargets = []) {
+        if (!controller) return null;
+
         controller.updateMatrixWorld(true);
-        controller.getWorldPosition(thumbObj.position);
+        this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        controller.getWorldQuaternion(this.controllerQuaternion);
+        this.raycaster.ray.direction
+            .set(0, 0, -1)
+            .applyQuaternion(this.controllerQuaternion)
+            .normalize();
+
+        const targets = pointerTargets.filter(Boolean);
+        if (!targets.length) return null;
+
+        const hits = this.raycaster.intersectObjects(targets, true);
+        return hits.length ? hits[0].point : null;
+    }
+
+    updateFallbackPinch(controller, thumbObj, indexObj, pointerTargets = []) {
+        if (!controller) return false;
+
+        const hitPoint = this.getControllerHitPoint(controller, pointerTargets);
+        if (hitPoint) {
+            thumbObj.position.copy(hitPoint);
+        } else {
+            controller.updateMatrixWorld(true);
+            controller.getWorldPosition(thumbObj.position);
+        }
+
         indexObj.position.copy(thumbObj.position);
         return true;
     }
@@ -252,6 +281,9 @@ export class HandInput {
     }
     
     updateJointPositions(leftHand, rightHand) {
+        this.leftPointerActive = false;
+        this.rightPointerActive = false;
+
         // Left hand joints
         if (leftHand && leftHand.joints && leftHand.joints['thumb-tip']) {
             const thumbTip = leftHand.joints['thumb-tip'];
@@ -263,6 +295,7 @@ export class HandInput {
             const indexTip = leftHand.joints['index-finger-tip'];
             this.lIndexObj.position.copy(indexTip.position);
             this.lIndexObj.rotation.copy(indexTip.rotation);
+            this.leftPointerActive = this.isJointTracked(indexTip);
         }
         
         // Right hand joints
@@ -276,17 +309,20 @@ export class HandInput {
             const indexTip = rightHand.joints['index-finger-tip'];
             this.rIndexObj.position.copy(indexTip.position);
             this.rIndexObj.rotation.copy(indexTip.rotation);
+            this.rightPointerActive = this.isJointTracked(indexTip);
         }
     }
     
     handleLeftHandPinch(leftHand, context) {
         const { productModel, objectsParent, rotationSpeed, 
                 currentObjectType, cloudModel, colorCircleDot } = context;
+        const pointerTargets = context.pointerTargets || [];
         
         const lTracked = this.isJointTracked(leftHand?.joints?.['thumb-tip']) && 
                         this.isJointTracked(leftHand?.joints?.['index-finger-tip']);
         const lFallbackPinch = !lTracked && this.controller1Selecting &&
-                        this.updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj);
+                        this.updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj, pointerTargets);
+        this.leftPointerActive = this.leftPointerActive || lFallbackPinch;
         const lIndexThumbDist = lTracked ? 
             this.lIndexObj.position.distanceTo(this.lThumbObj.position) : Infinity;
         
@@ -340,11 +376,13 @@ export class HandInput {
     handleRightHandPinch(rightHand, context) {
         const { productModel, objectsParent, rotationSpeed, 
                 currentObjectType, cloudModel, colorCircleDot } = context;
+        const pointerTargets = context.pointerTargets || [];
         
         const rTracked = this.isJointTracked(rightHand?.joints?.['thumb-tip']) && 
                         this.isJointTracked(rightHand?.joints?.['index-finger-tip']);
         const rFallbackPinch = !rTracked && this.controller2Selecting &&
-                        this.updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj);
+                        this.updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj, pointerTargets);
+        this.rightPointerActive = this.rightPointerActive || rFallbackPinch;
         const rIndexThumbDist = rTracked ? 
             this.rIndexObj.position.distanceTo(this.rThumbObj.position) : Infinity;
         
@@ -543,6 +581,14 @@ export class HandInput {
             cloudRotation.x = Math.max(minRotation, Math.min(maxRotation, newRotationX));
             cloudModel.rotation.x = cloudRotation.x;
         }
+    }
+
+    getLeftIndexObject() {
+        return this.leftPointerActive ? this.lIndexObj : null;
+    }
+
+    getRightIndexObject() {
+        return this.rightPointerActive ? this.rIndexObj : null;
     }
 }
 
