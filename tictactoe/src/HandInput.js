@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
+
 export class HandInput {
   constructor(
     renderer,
@@ -24,6 +26,31 @@ export class HandInput {
     this.scene.add(this.leftHand);
     this.scene.add(this.rightHand);
 
+    this.leftController = this.renderer.xr.getController(0);
+    this.rightController = this.renderer.xr.getController(1);
+    this.leftControllerSelecting = false;
+    this.rightControllerSelecting = false;
+    this._setupController(this.leftController, 'controller 0', value => {
+      this.leftControllerSelecting = value;
+    });
+    this._setupController(this.rightController, 'controller 1', value => {
+      this.rightControllerSelecting = value;
+    });
+    this.scene.add(this.leftController, this.rightController);
+
+    this.renderer.xr.addEventListener('sessionstart', () => {
+      const session = this.renderer.xr.getSession();
+      this._debugLog('xr sessionstart', {
+        inputSources: session ? Array.from(session.inputSources).map(this._describeInputSource) : []
+      });
+    });
+
+    this.renderer.xr.addEventListener('sessionend', () => {
+      this.leftControllerSelecting = false;
+      this.rightControllerSelecting = false;
+      this._debugLog('xr sessionend');
+    });
+
     // Internal pinch/rotation state
     this.leftRotationActive = false;
     this.rightRotationActive = false;
@@ -35,6 +62,39 @@ export class HandInput {
     this.PINCH_END = 0.035;
 
     this._initJointRefs();
+  }
+
+  _setupController(controller, label, setSelecting) {
+    controller.addEventListener('selectstart', () => {
+      setSelecting(true);
+      this._debugLog(`${label} selectstart`);
+    });
+    controller.addEventListener('selectend', () => {
+      setSelecting(false);
+      this._debugLog(`${label} selectend`);
+    });
+    controller.addEventListener('connected', event => {
+      this._debugLog(`${label} connected`, this._describeInputSource(event.data));
+    });
+  }
+
+  _describeInputSource(inputSource) {
+    if (!inputSource) return null;
+    return {
+      handedness: inputSource.handedness || 'none',
+      targetRayMode: inputSource.targetRayMode || 'unknown',
+      hasHand: !!inputSource.hand,
+      profiles: inputSource.profiles || []
+    };
+  }
+
+  _debugLog(message, data = null) {
+    if (!DEBUG_XR) return;
+    if (data === null) {
+      console.log(`[tictactoe-vr] ${message}`);
+    } else {
+      console.log(`[tictactoe-vr] ${message}`, data);
+    }
   }
 
   // -----------------------------------
@@ -128,6 +188,14 @@ export class HandInput {
       this._isJointTracked(hand?.joints?.['index-finger-tip']);
   }
 
+  _updateFallbackPinch(controller, thumbObj, indexObj) {
+    if (!controller) return false;
+    controller.updateMatrixWorld(true);
+    controller.getWorldPosition(thumbObj.position);
+    indexObj.position.copy(thumbObj.position);
+    return true;
+  }
+
   // -----------------------------------
   // Pinch → place O + rotate board
   // -----------------------------------
@@ -138,10 +206,17 @@ export class HandInput {
 
   _handleHandPinch(handName, hand, thumbObj, indexObj) {
     const tracked = this._hasTrackedPinchJoints(hand);
+    const controllerSelecting = handName === 'left'
+      ? this.leftControllerSelecting
+      : this.rightControllerSelecting;
+    const controller = handName === 'left' ? this.leftController : this.rightController;
+    const fallbackPinch = !tracked && controllerSelecting &&
+      this._updateFallbackPinch(controller, thumbObj, indexObj);
     const wasActive = handName === 'left' ? this.leftRotationActive : this.rightRotationActive;
     const dist = tracked ? thumbObj.position.distanceTo(indexObj.position) : Infinity;
-    const isPinching = tracked &&
-      (!wasActive ? dist < this.PINCH_START : dist < this.PINCH_END);
+    const isPinching = fallbackPinch || (
+      tracked && (!wasActive ? dist < this.PINCH_START : dist < this.PINCH_END)
+    );
 
     if (isPinching) {
       if (handName === 'left') {
@@ -226,6 +301,15 @@ export class HandInput {
 
     check(lh);
     check(rh);
+
+    if (this.leftControllerSelecting &&
+      this._checkPlaneIntersection(this.lIndexObj.position, this.buttonPlane)) {
+      this.onButtonHit();
+    }
+    if (this.rightControllerSelecting &&
+      this._checkPlaneIntersection(this.rIndexObj.position, this.buttonPlane)) {
+      this.onButtonHit();
+    }
   }
 
   _checkPlaneIntersection(point, plane) {

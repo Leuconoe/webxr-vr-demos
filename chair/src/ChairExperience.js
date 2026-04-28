@@ -504,7 +504,7 @@ export class ChairExperience {
     }
   }
 
-  handleHeaderToggleTouch(availableHands) {
+  handleHeaderToggleTouch(pointerPositions) {
     if (!this.headerToggle || !this.headerToggleSwitchMesh || !this.togglePosA || !this.togglePosB) {
       return;
     }
@@ -516,14 +516,10 @@ export class ChairExperience {
     let nearLeft = false;
     let nearRight = false;
 
-    for (let i = 0; i < availableHands.length; i++) {
-      const hand = availableHands[i];
-      if (!hand || !hand.joints) continue;
+    for (let i = 0; i < pointerPositions.length; i++) {
+      const indexPos = pointerPositions[i];
+      if (!indexPos) continue;
 
-      const indexJoint = hand.joints['index-finger-tip'];
-      if (!indexJoint) continue;
-
-      const indexPos = indexJoint.position;
       nearLeft = nearLeft || indexPos.distanceTo(this._vA) < touchThreshold;
       nearRight = nearRight || indexPos.distanceTo(this._vB) < touchThreshold;
     }
@@ -646,7 +642,7 @@ export class ChairExperience {
     });
   }
 
-  handleColorButtons(availableHands, nowMs) {
+  handleColorButtons(pointerPositions, nowMs) {
     if (!this.button1Mesh || !this.button2Mesh || !this.button3Mesh) return;
 
     // Only when switch is OFF (closed state)
@@ -654,14 +650,9 @@ export class ChairExperience {
 
     let buttonPressed = false;
 
-    for (let i = 0; i < availableHands.length && !buttonPressed; i++) {
-      const hand = availableHands[i];
-      if (!hand || !hand.joints) continue;
-
-      const indexJoint = hand.joints['index-finger-tip'];
-      if (!indexJoint) continue;
-
-      const indexPos = indexJoint.position;
+    for (let i = 0; i < pointerPositions.length && !buttonPressed; i++) {
+      const indexPos = pointerPositions[i];
+      if (!indexPos) continue;
 
       this.button1Mesh.getWorldPosition(this._vA);
       this.button2Mesh.getWorldPosition(this._vB);
@@ -932,20 +923,15 @@ export class ChairExperience {
       });
     }
 
-    // Build availableHands from HandInput for index-based interactions
-    const availableHands = [];
-    if (this.handInput?.hand1 && this.handInput.hand1.joints) {
-      availableHands.push(this.handInput.hand1);
-    }
-    if (this.handInput?.hand2 && this.handInput.hand2.joints) {
-      availableHands.push(this.handInput.hand2);
-    }
+    const pointerPositions = this.handInput?.getPointerPositions
+      ? this.handInput.getPointerPositions()
+      : [];
 
     const nowMs = performance.now();
 
-    if (availableHands.length) {
-      this.handleHeaderToggleTouch(availableHands);
-      this.handleColorButtons(availableHands, nowMs);
+    if (pointerPositions.length) {
+      this.handleHeaderToggleTouch(pointerPositions);
+      this.handleColorButtons(pointerPositions, nowMs);
     }
 
     this.handleSwitchButton();

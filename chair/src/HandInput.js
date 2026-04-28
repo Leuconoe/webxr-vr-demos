@@ -3,6 +3,7 @@ import * as THREE from 'three';
 const JOINT_RADIUS = 0.002;
 const PINCH_RADIUS = 0.006;
 const PINCH_THRESHOLD = 0.02;
+const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
 
 export class HandInput {
   constructor(renderer, scene) {
@@ -43,6 +44,33 @@ export class HandInput {
     scene.add(this.hand1);
     scene.add(this.hand2);
 
+    this.controller1 = renderer.xr.getController(0);
+    this.controller2 = renderer.xr.getController(1);
+    this.controller1Selecting = false;
+    this.controller2Selecting = false;
+    this.hand1Tracked = false;
+    this.hand2Tracked = false;
+    this._setupController(this.controller1, 'controller 0', value => {
+      this.controller1Selecting = value;
+    });
+    this._setupController(this.controller2, 'controller 1', value => {
+      this.controller2Selecting = value;
+    });
+    scene.add(this.controller1, this.controller2);
+
+    renderer.xr.addEventListener('sessionstart', () => {
+      const session = renderer.xr.getSession();
+      this._debugLog('xr sessionstart', {
+        inputSources: session ? Array.from(session.inputSources).map(this._describeInputSource) : []
+      });
+    });
+
+    renderer.xr.addEventListener('sessionend', () => {
+      this.controller1Selecting = false;
+      this.controller2Selecting = false;
+      this._debugLog('xr sessionend');
+    });
+
     // Pinch state
     this.lPinchOn = false;
     this.rPinchOn = false;
@@ -59,6 +87,39 @@ export class HandInput {
 
     // temp vectors
     this._tmp = new THREE.Vector3();
+  }
+
+  _setupController(controller, label, setSelecting) {
+    controller.addEventListener('selectstart', () => {
+      setSelecting(true);
+      this._debugLog(`${label} selectstart`);
+    });
+    controller.addEventListener('selectend', () => {
+      setSelecting(false);
+      this._debugLog(`${label} selectend`);
+    });
+    controller.addEventListener('connected', event => {
+      this._debugLog(`${label} connected`, this._describeInputSource(event.data));
+    });
+  }
+
+  _describeInputSource(inputSource) {
+    if (!inputSource) return null;
+    return {
+      handedness: inputSource.handedness || 'none',
+      targetRayMode: inputSource.targetRayMode || 'unknown',
+      hasHand: !!inputSource.hand,
+      profiles: inputSource.profiles || []
+    };
+  }
+
+  _debugLog(message, data = null) {
+    if (!DEBUG_XR) return;
+    if (data === null) {
+      console.log(`[chair-vr] ${message}`);
+    } else {
+      console.log(`[chair-vr] ${message}`, data);
+    }
   }
 
   _getAvailableHands() {
@@ -82,6 +143,21 @@ export class HandInput {
       this._isJointTracked(hand.joints['index-finger-tip']);
   }
 
+  _updateFallbackPinch(controller, thumbObj, indexObj) {
+    if (!controller) return false;
+    controller.updateMatrixWorld(true);
+    controller.getWorldPosition(thumbObj.position);
+    indexObj.position.copy(thumbObj.position);
+    return true;
+  }
+
+  getPointerPositions() {
+    const points = [];
+    if (this.hand1Tracked || this.controller1Selecting) points.push(this.lIndexObj.position);
+    if (this.hand2Tracked || this.controller2Selecting) points.push(this.rIndexObj.position);
+    return points;
+  }
+
   /**
    * update should be called every frame
    * @param {number} delta
@@ -93,6 +169,8 @@ export class HandInput {
     const leftHand = this._hasTrackedPinchJoints(this.hand1) ? this.hand1 : null;
     const rightHand = this._hasTrackedPinchJoints(this.hand2) ? this.hand2 : null;
     const availableHands = [leftHand, rightHand].filter(Boolean);
+    this.hand1Tracked = !!leftHand;
+    this.hand2Tracked = !!rightHand;
 
     // ensure pinch spheres stay hidden every frame
     this.lPinchSphere.visible = false;
@@ -135,6 +213,9 @@ export class HandInput {
         // still track position for interaction logic, just don't show it
         this.lPinchSphere.position.copy(thumb.position);
       }
+    } else if (this.controller1Selecting && this._updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj)) {
+      this.lPinchOn = true;
+      this.lPinchSphere.position.copy(this.lThumbObj.position);
     }
 
     // Right hand pinch
@@ -153,14 +234,17 @@ export class HandInput {
         // still track position for interaction logic, just don't show it
         this.rPinchSphere.position.copy(thumb.position);
       }
+    } else if (this.controller2Selecting && this._updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj)) {
+      this.rPinchOn = true;
+      this.rPinchSphere.position.copy(this.rThumbObj.position);
     }
 
     // --- Chair rotation from horizontal pinch movement ---
 
     if (chairModel && this.onRotateChair) {
       // Left hand rotation
-      if (this.lPinchOn && leftHand && leftHand.joints['thumb-tip']) {
-        const x = leftHand.joints['thumb-tip'].position.x;
+      if (this.lPinchOn) {
+        const x = this.lPinchSphere.position.x;
         if (!this.leftHandRotationActive) {
           this.leftHandRotationActive = true;
           this.lastLeftHandX = x;
@@ -177,12 +261,11 @@ export class HandInput {
 
       // Right hand rotation (only if we actually have a second hand)
       if (
-        availableHands.length > 1 &&
+        (availableHands.length > 1 || this.controller2Selecting) &&
         this.rPinchOn &&
-        rightHand &&
-        rightHand.joints['thumb-tip']
+        (rightHand || this.controller2Selecting)
       ) {
-        const x = rightHand.joints['thumb-tip'].position.x;
+        const x = this.rPinchSphere.position.x;
         if (!this.rightHandRotationActive) {
           this.rightHandRotationActive = true;
           this.lastRightHandX = x;

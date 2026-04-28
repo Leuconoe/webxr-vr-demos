@@ -23,13 +23,15 @@ let rJointsTracked = false;
 let lControllerSelecting = false;
 let rControllerSelecting = false;
 
-let tempCube, box, boxMaterial;
-let world, cubeShape, cubeBody;
+let tempCube, boxGeometry, boxMaterial;
+let world;
+let spawnedCubes = [];
 
 let previousTime = 0;
 
 const PINCH_START = 0.022;
 const PINCH_END = 0.035;
+const MAX_SPAWNED_CUBES = 50;
 const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
 
 // -----------------------------------------------------------------------------
@@ -76,11 +78,11 @@ function init() {
   setupHands();
   setupControllers();
 
-  // Physics world + cube
+  // Physics world
   setupPhysics();
 
-  // Visual cube linked to physics body
-  setupBoxMesh();
+  // Shared cube resources
+  setupBoxResources();
 
   // Temp cube used while scaling between pinch points
   setupTempCube();
@@ -197,15 +199,6 @@ function setupPhysics() {
   world.addContactMaterial(defaultContactMaterial);
   world.defaultContactMaterial = defaultContactMaterial;
 
-  // Cube body
-  cubeShape = new CANNON.Box(new CANNON.Vec3(0.2 * 0.5, 0.2 * 0.5, 0.2 * 0.5));
-  cubeBody = new CANNON.Body({
-    mass: 1,
-    position: new CANNON.Vec3(0, 1.5, -0.5),
-    shape: cubeShape
-  });
-  world.addBody(cubeBody);
-
   // Floor
   const floorShape = new CANNON.Plane();
   const floorBody = new CANNON.Body({ mass: 0 });
@@ -215,9 +208,8 @@ function setupPhysics() {
   world.addBody(floorBody);
 }
 
-function setupBoxMesh() {
-  const boxGeom = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-
+function setupBoxResources() {
+  boxGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
   boxMaterial = new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
@@ -231,11 +223,6 @@ function setupBoxMesh() {
       resolution: { value: new THREE.Vector2(1800.0, 1800.0) }
     }
   });
-
-  box = new THREE.Mesh(boxGeom, boxMaterial);
-  box.castShadow = true;
-  box.position.set(0, 1.5, -0.5);
-  scene.add(box);
 }
 
 function setupTempCube() {
@@ -257,9 +244,11 @@ function animate() {
   // Update physics
   world.step(1 / 60, deltaTime, 3);
 
-  // Sync visual box with physics body
-  box.position.copy(cubeBody.position);
-  box.quaternion.copy(cubeBody.quaternion);
+  // Sync visual cubes with physics bodies
+  spawnedCubes.forEach(({ mesh, body }) => {
+    mesh.position.copy(body.position);
+    mesh.quaternion.copy(body.quaternion);
+  });
 
   // Update shader time uniform
   boxMaterial.uniforms.uTime.value = elapsedTime;
@@ -401,27 +390,41 @@ function handleScalingLogic() {
 function spawnCube() {
   cubeScaling(); // ensure latest scale/position
 
-  // Copy transform from tempCube to physics body
-  cubeBody.position.set(tempCube.position.x, tempCube.position.y, tempCube.position.z);
-  cubeBody.quaternion.set(
+  const mesh = new THREE.Mesh(boxGeometry, boxMaterial);
+  mesh.castShadow = true;
+  mesh.position.copy(tempCube.position);
+  mesh.quaternion.copy(tempCube.quaternion);
+  mesh.scale.set(tempCube.scale.x * 0.25, tempCube.scale.y * 0.25, tempCube.scale.z * 0.25);
+  scene.add(mesh);
+
+  const halfExtents = new CANNON.Vec3(
+    Math.max(mesh.scale.x * 0.125, 0.001),
+    Math.max(mesh.scale.y * 0.125, 0.001),
+    Math.max(mesh.scale.z * 0.125, 0.001)
+  );
+  const shape = new CANNON.Box(halfExtents);
+  const body = new CANNON.Body({
+    mass: 1,
+    position: new CANNON.Vec3(tempCube.position.x, tempCube.position.y, tempCube.position.z),
+    shape
+  });
+  body.quaternion.set(
     tempCube.quaternion.x,
     tempCube.quaternion.y,
     tempCube.quaternion.z,
-    tempCube.quaternion.w ?? cubeBody.quaternion.w
+    tempCube.quaternion.w
   );
+  world.addBody(body);
 
-  // Scale visual box
-  box.scale.set(tempCube.scale.x * 0.25, tempCube.scale.y * 0.25, tempCube.scale.z * 0.25);
+  spawnedCubes.push({ mesh, body });
+  debugLog('cube spawned', { count: spawnedCubes.length });
 
-  // Update CANNON shape half-extents based on new scale
-  const newHalfExtents = new CANNON.Vec3(
-    box.scale.x * 0.125,
-    box.scale.y * 0.125,
-    box.scale.z * 0.125
-  );
-
-  cubeShape.halfExtents = newHalfExtents;
-  cubeShape.updateConvexPolyhedronRepresentation();
+  while (spawnedCubes.length > MAX_SPAWNED_CUBES) {
+    const oldest = spawnedCubes.shift();
+    scene.remove(oldest.mesh);
+    world.removeBody(oldest.body);
+    debugLog('oldest cube removed', { count: spawnedCubes.length });
+  }
 }
 
 function cubeScaling() {

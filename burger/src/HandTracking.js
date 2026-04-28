@@ -1,6 +1,8 @@
 // HandTracking.js
 import * as THREE from 'three';
 
+const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
+
 /**
  * Hand tracking + interactions:
  * - Reads WebXR hands (renderer.xr.getHand)
@@ -79,6 +81,19 @@ export function CreateHandTracking({
   xrRoot.add(handsGroup);
   handsGroup.visible = true;
 
+  const controller1 = renderer.xr.getController(0);
+  const controller2 = renderer.xr.getController(1);
+  let controller1Selecting = false;
+  let controller2Selecting = false;
+
+  SetupController(controller1, 'controller 0', value => {
+    controller1Selecting = value;
+  });
+  SetupController(controller2, 'controller 1', value => {
+    controller2Selecting = value;
+  });
+  xrRoot.add(controller1, controller2);
+
   // Interaction state
   let lPinchOn = false;
   let rPinchOn = false;
@@ -115,6 +130,47 @@ export function CreateHandTracking({
       Number.isFinite(joint.position?.y) &&
       Number.isFinite(joint.position?.z) &&
       joint.visible !== false;
+  }
+
+  function SetupController(controller, label, setSelecting) {
+    controller.addEventListener('selectstart', () => {
+      setSelecting(true);
+      DebugLog(`${label} selectstart`);
+    });
+    controller.addEventListener('selectend', () => {
+      setSelecting(false);
+      DebugLog(`${label} selectend`);
+    });
+    controller.addEventListener('connected', event => {
+      DebugLog(`${label} connected`, DescribeInputSource(event.data));
+    });
+  }
+
+  function DescribeInputSource(inputSource) {
+    if (!inputSource) return null;
+    return {
+      handedness: inputSource.handedness || 'none',
+      targetRayMode: inputSource.targetRayMode || 'unknown',
+      hasHand: !!inputSource.hand,
+      profiles: inputSource.profiles || []
+    };
+  }
+
+  function DebugLog(message, data = null) {
+    if (!DEBUG_XR) return;
+    if (data === null) {
+      console.log(`[burger-vr] ${message}`);
+    } else {
+      console.log(`[burger-vr] ${message}`, data);
+    }
+  }
+
+  function UpdateFallbackPinch(controller, thumbObj, indexObj) {
+    if (!controller) return false;
+    controller.updateMatrixWorld(true);
+    controller.getWorldPosition(thumbObj.position);
+    indexObj.position.copy(thumbObj.position);
+    return true;
   }
 
   // ===== Helper: plane hit test =====
@@ -207,10 +263,20 @@ export function CreateHandTracking({
     }
 
     // --- Left pinch detection + grab root when joined ---
+    const leftFallbackPinch = !leftTracked && controller1Selecting &&
+      UpdateFallbackPinch(controller1, lThumbObj, lIndexObj);
+    if (leftFallbackPinch && Array.isArray(partUIs)) {
+      partUIs.forEach((plane, i) => {
+        if (CheckPointPlaneIntersection(lIndexObj.position, plane)) {
+          ToggleSwitch(i);
+        }
+      });
+    }
     const lDist = leftTracked ? lIndexObj.position.distanceTo(lThumbObj.position) : Infinity;
-    const leftPinching = pinchDetectionEnabled &&
-      leftTracked &&
-      (!lPinchOn ? lDist < PINCH_START : lDist < PINCH_END);
+    const leftPinching = pinchDetectionEnabled && (
+      leftFallbackPinch ||
+      (leftTracked && (!lPinchOn ? lDist < PINCH_START : lDist < PINCH_END))
+    );
 
     if (leftPinching) {
       lPinchSphere.position.copy(lThumbObj.position);
@@ -293,10 +359,20 @@ export function CreateHandTracking({
     }
 
     // --- Right pinch detection + grab root when joined ---
+    const rightFallbackPinch = !rightTracked && controller2Selecting &&
+      UpdateFallbackPinch(controller2, rThumbObj, rIndexObj);
+    if (rightFallbackPinch && Array.isArray(partUIs)) {
+      partUIs.forEach((plane, i) => {
+        if (CheckPointPlaneIntersection(rIndexObj.position, plane)) {
+          ToggleSwitch(i);
+        }
+      });
+    }
     const rDist = rightTracked ? rIndexObj.position.distanceTo(rThumbObj.position) : Infinity;
-    const rightPinching = pinchDetectionEnabled &&
-      rightTracked &&
-      (!rPinchOn ? rDist < PINCH_START : rDist < PINCH_END);
+    const rightPinching = pinchDetectionEnabled && (
+      rightFallbackPinch ||
+      (rightTracked && (!rPinchOn ? rDist < PINCH_START : rDist < PINCH_END))
+    );
 
     if (rightPinching) {
       rPinchSphere.position.copy(rThumbObj.position);
@@ -620,15 +696,22 @@ export function CreateHandTracking({
   // Optional hooks if you want to gate pinchDetectionEnabled by XR session
   function OnXRSessionStart() {
     pinchDetectionEnabled = true;
+    const session = renderer.xr.getSession();
+    DebugLog('xr sessionstart', {
+      inputSources: session ? Array.from(session.inputSources).map(DescribeInputSource) : []
+    });
   }
 
   function OnXRSessionEnd() {
     pinchDetectionEnabled = false;
     lPinchOn = false;
     rPinchOn = false;
+    controller1Selecting = false;
+    controller2Selecting = false;
     leftHandGrabbing = false;
     rightHandGrabbing = false;
     grabbedObject = null;
+    DebugLog('xr sessionend');
   }
 
   return {

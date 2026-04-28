@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import gsap from 'gsap';
 
+const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
+
 export class HandInput {
     constructor(scene, renderer, camera) {
         this.scene = scene;
@@ -45,6 +47,7 @@ export class HandInput {
         this.initJointReferences();
         this.initPinchReferences();
         this.initHands();
+        this.initControllers();
         
         // Listen to XR session events
         this.renderer.xr.addEventListener('sessionstart', () => this.onSessionStart());
@@ -99,8 +102,61 @@ export class HandInput {
         this.scene.add(this.handsGroup);
         this.handsGroup.visible = false;
     }
+
+    initControllers() {
+        this.controller1 = this.renderer.xr.getController(0);
+        this.controller2 = this.renderer.xr.getController(1);
+        this.controller1Selecting = false;
+        this.controller2Selecting = false;
+
+        this.setupController(this.controller1, 'controller 0', value => {
+            this.controller1Selecting = value;
+        });
+        this.setupController(this.controller2, 'controller 1', value => {
+            this.controller2Selecting = value;
+        });
+
+        this.scene.add(this.controller1, this.controller2);
+    }
+
+    setupController(controller, label, setSelecting) {
+        controller.addEventListener('selectstart', () => {
+            setSelecting(true);
+            this.debugLog(`${label} selectstart`);
+        });
+        controller.addEventListener('selectend', () => {
+            setSelecting(false);
+            this.debugLog(`${label} selectend`);
+        });
+        controller.addEventListener('connected', event => {
+            this.debugLog(`${label} connected`, this.describeInputSource(event.data));
+        });
+    }
+
+    describeInputSource(inputSource) {
+        if (!inputSource) return null;
+        return {
+            handedness: inputSource.handedness || 'none',
+            targetRayMode: inputSource.targetRayMode || 'unknown',
+            hasHand: !!inputSource.hand,
+            profiles: inputSource.profiles || []
+        };
+    }
+
+    debugLog(message, data = null) {
+        if (!DEBUG_XR) return;
+        if (data === null) {
+            console.log(`[sneaker-vr] ${message}`);
+        } else {
+            console.log(`[sneaker-vr] ${message}`, data);
+        }
+    }
     
     onSessionStart() {
+        const session = this.renderer.xr.getSession();
+        this.debugLog('xr sessionstart', {
+            inputSources: session ? Array.from(session.inputSources).map(this.describeInputSource) : []
+        });
         this.xrInteractionBlockedUntil = Date.now() + this.XR_START_GRACE_MS;
         this.leftPinchPrimed = false;
         this.rightPinchPrimed = false;
@@ -112,6 +168,9 @@ export class HandInput {
         this.xrInteractionBlockedUntil = 0;
         this.leftPinchPrimed = false;
         this.rightPinchPrimed = false;
+        this.controller1Selecting = false;
+        this.controller2Selecting = false;
+        this.debugLog('xr sessionend');
     }
     
     isJointTracked(j) {
@@ -119,6 +178,14 @@ export class HandInput {
                Number.isFinite(j.position?.y) && 
                Number.isFinite(j.position?.z) && 
                j.visible !== false;
+    }
+
+    updateFallbackPinch(controller, thumbObj, indexObj) {
+        if (!controller) return false;
+        controller.updateMatrixWorld(true);
+        controller.getWorldPosition(thumbObj.position);
+        indexObj.position.copy(thumbObj.position);
+        return true;
     }
     
     resetGrabAndPinchState(productModel, objectsParent, sizeScales, selectedSizeIndex) {
@@ -218,14 +285,21 @@ export class HandInput {
         
         const lTracked = this.isJointTracked(leftHand?.joints?.['thumb-tip']) && 
                         this.isJointTracked(leftHand?.joints?.['index-finger-tip']);
+        const lFallbackPinch = !lTracked && this.controller1Selecting &&
+                        this.updateFallbackPinch(this.controller1, this.lThumbObj, this.lIndexObj);
         const lIndexThumbDist = lTracked ? 
             this.lIndexObj.position.distanceTo(this.lThumbObj.position) : Infinity;
         
         // Pinch detection with hysteresis
-        if (!this.lPinchOn && lIndexThumbDist < this.PINCH_START) this.lPinchOn = true;
-        if (this.lPinchOn && lIndexThumbDist > this.PINCH_END) this.lPinchOn = false;
-        if (lIndexThumbDist > this.PINCH_END) this.leftPinchPrimed = true;
-        const leftActionablePinch = lTracked && this.leftPinchPrimed && this.lPinchOn;
+        if (lFallbackPinch) {
+            this.lPinchOn = true;
+            this.leftPinchPrimed = true;
+        } else {
+            if (!this.lPinchOn && lIndexThumbDist < this.PINCH_START) this.lPinchOn = true;
+            if (this.lPinchOn && lIndexThumbDist > this.PINCH_END) this.lPinchOn = false;
+            if (lIndexThumbDist > this.PINCH_END) this.leftPinchPrimed = true;
+        }
+        const leftActionablePinch = (lTracked || lFallbackPinch) && this.leftPinchPrimed && this.lPinchOn;
         
         if (leftActionablePinch) {
             this.lPinchSphere.position.copy(this.lThumbObj.position);
@@ -269,14 +343,21 @@ export class HandInput {
         
         const rTracked = this.isJointTracked(rightHand?.joints?.['thumb-tip']) && 
                         this.isJointTracked(rightHand?.joints?.['index-finger-tip']);
+        const rFallbackPinch = !rTracked && this.controller2Selecting &&
+                        this.updateFallbackPinch(this.controller2, this.rThumbObj, this.rIndexObj);
         const rIndexThumbDist = rTracked ? 
             this.rIndexObj.position.distanceTo(this.rThumbObj.position) : Infinity;
         
         // Pinch detection with hysteresis
-        if (!this.rPinchOn && rIndexThumbDist < this.PINCH_START) this.rPinchOn = true;
-        if (this.rPinchOn && rIndexThumbDist > this.PINCH_END) this.rPinchOn = false;
-        if (rIndexThumbDist > this.PINCH_END) this.rightPinchPrimed = true;
-        const rightActionablePinch = rTracked && this.rightPinchPrimed && this.rPinchOn;
+        if (rFallbackPinch) {
+            this.rPinchOn = true;
+            this.rightPinchPrimed = true;
+        } else {
+            if (!this.rPinchOn && rIndexThumbDist < this.PINCH_START) this.rPinchOn = true;
+            if (this.rPinchOn && rIndexThumbDist > this.PINCH_END) this.rPinchOn = false;
+            if (rIndexThumbDist > this.PINCH_END) this.rightPinchPrimed = true;
+        }
+        const rightActionablePinch = (rTracked || rFallbackPinch) && this.rightPinchPrimed && this.rPinchOn;
         
         if (rightActionablePinch) {
             this.rPinchSphere.position.copy(this.rThumbObj.position);
