@@ -32,6 +32,7 @@ let previousTime = 0;
 const PINCH_START = 0.022;
 const PINCH_END = 0.035;
 const MAX_SPAWNED_CUBES = 50;
+const FLOOR_HEIGHT = 1.0;
 const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
 
 // -----------------------------------------------------------------------------
@@ -204,7 +205,7 @@ function setupPhysics() {
   const floorBody = new CANNON.Body({ mass: 0 });
   floorBody.addShape(floorShape);
   floorBody.quaternion.setFromAxisAngle(new CANNON.Vec3(-1, 0, 0), Math.PI * 0.5);
-  floorBody.position.y = 0.01;
+  floorBody.position.y = FLOOR_HEIGHT;
   world.addBody(floorBody);
 }
 
