@@ -35,8 +35,8 @@ export class EndGameUI {
     const textureLoader = new THREE.TextureLoader();
     const winsTexture = textureLoader.load('/static/ui_wins.png');
     const buttonTexture = textureLoader.load('/static/ui_button.png');
-    winsTexture.encoding = THREE.sRGBEncoding;
-    buttonTexture.encoding = THREE.sRGBEncoding;
+    winsTexture.colorSpace = THREE.SRGBColorSpace;
+    buttonTexture.colorSpace = THREE.SRGBColorSpace;
 
     // O win plane
     this.endGameOPlane = new THREE.Mesh(

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { XRButton } from 'three/addons/webxr/XRButton.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 export function setupXR() {
   const scene = new THREE.Scene();
@@ -33,8 +33,8 @@ export function setupXR() {
   document.body.appendChild(renderer.domElement);
 
   // Hidden XR button
-  const xrButton = XRButton.createButton(renderer, {
-    optionalFeatures: ['hand-tracking']
+  const xrButton = VRButton.createButton(renderer, {
+    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
   });
   xrButton.style.display = 'none';
 

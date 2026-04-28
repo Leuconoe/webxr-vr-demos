@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { XRButton } from 'three/addons/webxr/XRButton.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import gsap from 'gsap';
 
@@ -41,8 +41,8 @@ renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 // XR button (hidden, full-page click to enter XR)
-const xrButton = XRButton.createButton(renderer, {
-  optionalFeatures: ['hand-tracking'],
+const xrButton = VRButton.createButton(renderer, {
+  optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
 });
 xrButton.style.display = 'none';
 xrButton.style.opacity = '0';

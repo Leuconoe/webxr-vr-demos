@@ -63,9 +63,23 @@ export class HandInput {
 
   _getAvailableHands() {
     const hands = [];
-    if (this.hand1 && this.hand1.joints) hands.push(this.hand1);
-    if (this.hand2 && this.hand2.joints) hands.push(this.hand2);
+    if (this._hasTrackedPinchJoints(this.hand1)) hands.push(this.hand1);
+    if (this._hasTrackedPinchJoints(this.hand2)) hands.push(this.hand2);
     return hands;
+  }
+
+  _isJointTracked(joint) {
+    return !!joint &&
+      Number.isFinite(joint.position?.x) &&
+      Number.isFinite(joint.position?.y) &&
+      Number.isFinite(joint.position?.z) &&
+      joint.visible !== false;
+  }
+
+  _hasTrackedPinchJoints(hand) {
+    return !!hand?.joints &&
+      this._isJointTracked(hand.joints['thumb-tip']) &&
+      this._isJointTracked(hand.joints['index-finger-tip']);
   }
 
   /**
@@ -76,9 +90,9 @@ export class HandInput {
    */
   update(delta, opts = {}) {
     const { chairModel } = opts;
-    const availableHands = this._getAvailableHands();
-    const leftHand = availableHands[0] || null;
-    const rightHand = availableHands[1] || availableHands[0] || null;
+    const leftHand = this._hasTrackedPinchJoints(this.hand1) ? this.hand1 : null;
+    const rightHand = this._hasTrackedPinchJoints(this.hand2) ? this.hand2 : null;
+    const availableHands = [leftHand, rightHand].filter(Boolean);
 
     // ensure pinch spheres stay hidden every frame
     this.lPinchSphere.visible = false;

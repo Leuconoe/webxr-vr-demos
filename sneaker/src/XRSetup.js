@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { XRButton } from 'three/addons/webxr/XRButton.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 
 export class XRSetup {
     constructor(scene, camera) {
@@ -8,7 +8,7 @@ export class XRSetup {
         this.renderer = null;
         this.pmrem = null;
         this.xrButton = null;
-        this.defaultBackground = new THREE.Color(0x505050);
+        this.defaultBackground = new THREE.Color(0x000000);
         this.compositionPositioned = false;
         this.xrSessionStartTime = null;
         
@@ -41,8 +41,8 @@ export class XRSetup {
     
     initXRButton() {
         // Create WebXR button but keep it hidden
-        this.xrButton = XRButton.createButton(this.renderer, { 
-            'optionalFeatures': ['hand-tracking'] 
+        this.xrButton = VRButton.createButton(this.renderer, {
+            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
         });
         this.xrButton.style.display = 'none';
         this.xrButton.style.opacity = '0';
@@ -109,7 +109,7 @@ export class XRSetup {
         // Toggle CSS class on XR session start/end
         this.renderer.xr.addEventListener('sessionstart', () => {
             document.body.classList.add('xr-presenting');
-            this.scene.background = null; // Transparent for passthrough
+            this.scene.background = this.defaultBackground;
         });
         this.renderer.xr.addEventListener('sessionend', () => {
             document.body.classList.remove('xr-presenting');

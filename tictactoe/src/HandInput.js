@@ -31,6 +31,8 @@ export class HandInput {
     this.lastLeftY = 0;
     this.lastRightX = 0;
     this.lastRightY = 0;
+    this.PINCH_START = 0.022;
+    this.PINCH_END = 0.035;
 
     this._initJointRefs();
   }
@@ -94,31 +96,52 @@ export class HandInput {
     const lh = this.leftHand;
     const rh = this.rightHand;
 
-    if (lh?.joints?.['thumb-tip']) {
-      this.lThumbObj.position.copy(lh.joints['thumb-tip'].position);
+    const lThumb = lh?.joints?.['thumb-tip'];
+    const lIndex = lh?.joints?.['index-finger-tip'];
+    const rThumb = rh?.joints?.['thumb-tip'];
+    const rIndex = rh?.joints?.['index-finger-tip'];
+
+    if (this._isJointTracked(lThumb)) {
+      this.lThumbObj.position.copy(lThumb.position);
     }
-    if (lh?.joints?.['index-finger-tip']) {
-      this.lIndexObj.position.copy(lh.joints['index-finger-tip'].position);
+    if (this._isJointTracked(lIndex)) {
+      this.lIndexObj.position.copy(lIndex.position);
     }
-    if (rh?.joints?.['thumb-tip']) {
-      this.rThumbObj.position.copy(rh.joints['thumb-tip'].position);
+    if (this._isJointTracked(rThumb)) {
+      this.rThumbObj.position.copy(rThumb.position);
     }
-    if (rh?.joints?.['index-finger-tip']) {
-      this.rIndexObj.position.copy(rh.joints['index-finger-tip'].position);
+    if (this._isJointTracked(rIndex)) {
+      this.rIndexObj.position.copy(rIndex.position);
     }
+  }
+
+  _isJointTracked(joint) {
+    return !!joint &&
+      Number.isFinite(joint.position?.x) &&
+      Number.isFinite(joint.position?.y) &&
+      Number.isFinite(joint.position?.z) &&
+      joint.visible !== false;
+  }
+
+  _hasTrackedPinchJoints(hand) {
+    return this._isJointTracked(hand?.joints?.['thumb-tip']) &&
+      this._isJointTracked(hand?.joints?.['index-finger-tip']);
   }
 
   // -----------------------------------
   // Pinch → place O + rotate board
   // -----------------------------------
   _processPinches() {
-    this._handleHandPinch('left', this.lThumbObj, this.lIndexObj);
-    this._handleHandPinch('right', this.rThumbObj, this.rIndexObj);
+    this._handleHandPinch('left', this.leftHand, this.lThumbObj, this.lIndexObj);
+    this._handleHandPinch('right', this.rightHand, this.rThumbObj, this.rIndexObj);
   }
 
-  _handleHandPinch(handName, thumbObj, indexObj) {
-    const dist = thumbObj.position.distanceTo(indexObj.position);
-    const isPinching = dist < 0.02;
+  _handleHandPinch(handName, hand, thumbObj, indexObj) {
+    const tracked = this._hasTrackedPinchJoints(hand);
+    const wasActive = handName === 'left' ? this.leftRotationActive : this.rightRotationActive;
+    const dist = tracked ? thumbObj.position.distanceTo(indexObj.position) : Infinity;
+    const isPinching = tracked &&
+      (!wasActive ? dist < this.PINCH_START : dist < this.PINCH_END);
 
     if (isPinching) {
       if (handName === 'left') {
@@ -192,7 +215,7 @@ export class HandInput {
     const rh = this.rightHand;
 
     const check = (hand) => {
-      if (!hand?.joints?.['index-finger-tip']) return;
+      if (!this._isJointTracked(hand?.joints?.['index-finger-tip'])) return;
       const p = new THREE.Vector3().copy(
         hand.joints['index-finger-tip'].position
       );

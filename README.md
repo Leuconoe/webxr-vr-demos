@@ -1,6 +1,6 @@
-# webxr-ar-demos
+# webxr-vr-demos
 
-A collection of Three.js-based WebXR demos optimized for AR glasses ([Spectacles](https://www.spectacles.com/)).
+A collection of Three.js-based WebXR demos adapted for VR sessions with hand tracking.
 
 <br>
 
@@ -9,13 +9,13 @@ A collection of Three.js-based WebXR demos optimized for AR glasses ([Spectacles
 Clone the repository:
 
 ```bash
-git clone https://github.com/dmvrg/webxr-ar-demos.git
+git clone https://github.com/Leuconoe/webxr-vr-demos.git
 ```
 
 Then navigate to a demo folder and install dependencies to run it locally. For example:
 
 ```bash
-cd webxr-ar-demos/glowcube
+cd webxr-vr-demos/glowcube
 npm install
 npm run dev
 ```

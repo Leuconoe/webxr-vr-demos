@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { XRButton } from 'three/addons/webxr/XRButton.js';
-import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
 import CANNON from 'cannon';
 
 import vertexShader from './assets/shaders/vertex.glsl';
@@ -18,11 +17,16 @@ let rPinchSphere, lPinchSphere;
 let lPinchOn = false;
 let rPinchOn = false;
 let scalingOn = false;
+let lJointsTracked = false;
+let rJointsTracked = false;
 
 let tempCube, box, boxMaterial;
 let world, cubeShape, cubeBody;
 
 let previousTime = 0;
+
+const PINCH_START = 0.022;
+const PINCH_END = 0.035;
 
 // -----------------------------------------------------------------------------
 // Init
@@ -50,8 +54,8 @@ function init() {
 
   // XR button (hand tracking + depth sensing)
   document.body.appendChild(
-    XRButton.createButton(renderer, {
-      optionalFeatures: ['depth-sensing', 'hand-tracking']
+    VRButton.createButton(renderer, {
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
     })
   );
 
@@ -123,15 +127,11 @@ function setupPinchReferences() {
 }
 
 function setupHands() {
-  const handModelFactory = new XRHandModelFactory();
-
   handRight = renderer.xr.getHand(0);
-  // handRight.add(handModelFactory.createHandModel(handRight));
-  // scene.add(handRight);
+  scene.add(handRight);
 
   handLeft = renderer.xr.getHand(1);
-  // handLeft.add(handModelFactory.createHandModel(handLeft));
-  // scene.add(handLeft);
+  scene.add(handLeft);
 
 }
 
@@ -229,13 +229,19 @@ function animate() {
 // -----------------------------------------------------------------------------
 
 function updateJointReferences() {
+  rJointsTracked = false;
+  lJointsTracked = false;
+
   // Right hand (index 0)
   if (handRight?.joints) {
     const thumb = handRight.joints['thumb-tip'];
     const index = handRight.joints['index-finger-tip'];
 
-    if (thumb) rThumbObj.position.copy(thumb.position);
-    if (index) rIndexObj.position.copy(index.position);
+    if (isJointTracked(thumb) && isJointTracked(index)) {
+      rThumbObj.position.copy(thumb.position);
+      rIndexObj.position.copy(index.position);
+      rJointsTracked = true;
+    }
   }
 
   // Left hand (index 1)
@@ -243,34 +249,53 @@ function updateJointReferences() {
     const thumb = handLeft.joints['thumb-tip'];
     const index = handLeft.joints['index-finger-tip'];
 
-    if (thumb) lThumbObj.position.copy(thumb.position);
-    if (index) lIndexObj.position.copy(index.position);
+    if (isJointTracked(thumb) && isJointTracked(index)) {
+      lThumbObj.position.copy(thumb.position);
+      lIndexObj.position.copy(index.position);
+      lJointsTracked = true;
+    }
   }
 }
 
 function updatePinchState() {
-  const rDist = rIndexObj.position.distanceTo(rThumbObj.position);
-  const lDist = lIndexObj.position.distanceTo(lThumbObj.position);
+  const rDist = rJointsTracked ? rIndexObj.position.distanceTo(rThumbObj.position) : Infinity;
+  const lDist = lJointsTracked ? lIndexObj.position.distanceTo(lThumbObj.position) : Infinity;
 
   // Right pinch
-  if (rDist < 0.02) {
-    rPinchSphere.position.copy(rThumbObj.position);
+  if (!rPinchOn && rDist < PINCH_START) {
     rPinchOn = true;
+  } else if (rPinchOn && rDist > PINCH_END) {
+    rPinchOn = false;
+  }
+
+  if (rPinchOn) {
+    rPinchSphere.position.copy(rThumbObj.position);
     // rPinchSphere.visible = true;
   } else {
-    rPinchOn = false;
     rPinchSphere.visible = false;
   }
 
   // Left pinch
-  if (lDist < 0.02) {
-    lPinchSphere.position.copy(lThumbObj.position);
+  if (!lPinchOn && lDist < PINCH_START) {
     lPinchOn = true;
+  } else if (lPinchOn && lDist > PINCH_END) {
+    lPinchOn = false;
+  }
+
+  if (lPinchOn) {
+    lPinchSphere.position.copy(lThumbObj.position);
     // lPinchSphere.visible = true;
   } else {
-    lPinchOn = false;
     lPinchSphere.visible = false;
   }
+}
+
+function isJointTracked(joint) {
+  return !!joint &&
+    Number.isFinite(joint.position?.x) &&
+    Number.isFinite(joint.position?.y) &&
+    Number.isFinite(joint.position?.z) &&
+    joint.visible !== false;
 }
 
 function handleScalingLogic() {

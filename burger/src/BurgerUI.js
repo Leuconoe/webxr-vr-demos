@@ -19,7 +19,7 @@ export function CreateBurgerUI({ scene, xrRoot, switchStates, cubeA, cubeB }) {
 
   // Load main UI texture
   const mainUITexture = textureLoader.load('/static/ui_main.png');
-  mainUITexture.encoding = THREE.sRGBEncoding;
+  mainUITexture.colorSpace = THREE.SRGBColorSpace;
 
   // Load switch textures
   const switchTextures = [
@@ -30,8 +30,8 @@ export function CreateBurgerUI({ scene, xrRoot, switchStates, cubeA, cubeB }) {
     { OFF: textureLoader.load('/static/ui_switch4_OFF.png'), ON: textureLoader.load('/static/ui_switch4_ON.png') }
   ];
   switchTextures.forEach(pair => {
-    pair.OFF.encoding = THREE.sRGBEncoding;
-    pair.ON.encoding = THREE.sRGBEncoding;
+    pair.OFF.colorSpace = THREE.SRGBColorSpace;
+    pair.ON.colorSpace = THREE.SRGBColorSpace;
   });
 
   // Initialize switch textures based on initial states
@@ -94,7 +94,7 @@ export function CreateBurgerUI({ scene, xrRoot, switchStates, cubeA, cubeB }) {
 
   // Create arrow planes
   const arrowTexture = textureLoader.load('/static/ui_arrow.png');
-  arrowTexture.encoding = THREE.sRGBEncoding;
+  arrowTexture.colorSpace = THREE.SRGBColorSpace;
   const arrowGeometry = new THREE.PlaneGeometry(0.2016, 0.2016);
   const arrowMaterial = new THREE.MeshBasicMaterial({
     map: arrowTexture,

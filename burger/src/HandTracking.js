@@ -94,6 +94,8 @@ export function CreateHandTracking({
   const grabOffset = 0.05;
 
   let pinchDetectionEnabled = true; // if you want to gate after some time, expose setters
+  const PINCH_START = 0.022;
+  const PINCH_END = 0.035;
 
   // Cooldown for switch taps
   const switchCooldowns = [0, 0, 0, 0, 0];
@@ -106,6 +108,14 @@ export function CreateHandTracking({
   const _aWorld = new THREE.Vector3();
   const _bWorld = new THREE.Vector3();
   const _aQuat = new THREE.Quaternion();
+
+  function IsJointTracked(joint) {
+    return !!joint &&
+      Number.isFinite(joint.position?.x) &&
+      Number.isFinite(joint.position?.y) &&
+      Number.isFinite(joint.position?.z) &&
+      joint.visible !== false;
+  }
 
   // ===== Helper: plane hit test =====
   function CheckPointPlaneIntersection(point, plane) {
@@ -147,19 +157,20 @@ export function CreateHandTracking({
   function UpdateHandTracking() {
     const leftHand = hand1;
     const rightHand = hand2;
+    let leftTracked = false;
+    let rightTracked = false;
 
     // --- Left thumb / index tips ---
     if (leftHand && leftHand.joints) {
       const lThumb = leftHand.joints['thumb-tip'];
       const lIndex = leftHand.joints['index-finger-tip'];
 
-      if (lThumb) {
+      if (IsJointTracked(lThumb) && IsJointTracked(lIndex)) {
         lThumbObj.position.copy(lThumb.position);
         lThumbObj.rotation.setFromQuaternion(lThumb.quaternion || lThumbObj.quaternion);
-      }
-      if (lIndex) {
         lIndexObj.position.copy(lIndex.position);
         lIndexObj.rotation.setFromQuaternion(lIndex.quaternion || lIndexObj.quaternion);
+        leftTracked = true;
 
         // Tap UI with left index
         if (Array.isArray(partUIs)) {
@@ -177,13 +188,12 @@ export function CreateHandTracking({
       const rThumb = rightHand.joints['thumb-tip'];
       const rIndex = rightHand.joints['index-finger-tip'];
 
-      if (rThumb) {
+      if (IsJointTracked(rThumb) && IsJointTracked(rIndex)) {
         rThumbObj.position.copy(rThumb.position);
         rThumbObj.rotation.setFromQuaternion(rThumb.quaternion || rThumbObj.quaternion);
-      }
-      if (rIndex) {
         rIndexObj.position.copy(rIndex.position);
         rIndexObj.rotation.setFromQuaternion(rIndex.quaternion || rIndexObj.quaternion);
+        rightTracked = true;
 
         // Tap UI with right index
         if (Array.isArray(partUIs)) {
@@ -197,9 +207,12 @@ export function CreateHandTracking({
     }
 
     // --- Left pinch detection + grab root when joined ---
-    const lDist = lIndexObj.position.distanceTo(lThumbObj.position);
+    const lDist = leftTracked ? lIndexObj.position.distanceTo(lThumbObj.position) : Infinity;
+    const leftPinching = pinchDetectionEnabled &&
+      leftTracked &&
+      (!lPinchOn ? lDist < PINCH_START : lDist < PINCH_END);
 
-    if (pinchDetectionEnabled && lDist < 0.02) {
+    if (leftPinching) {
       lPinchSphere.position.copy(lThumbObj.position);
       lPinchSphere.rotation.copy(lThumbObj.rotation);
       lPinchOn = true;
@@ -280,9 +293,12 @@ export function CreateHandTracking({
     }
 
     // --- Right pinch detection + grab root when joined ---
-    const rDist = rIndexObj.position.distanceTo(rThumbObj.position);
+    const rDist = rightTracked ? rIndexObj.position.distanceTo(rThumbObj.position) : Infinity;
+    const rightPinching = pinchDetectionEnabled &&
+      rightTracked &&
+      (!rPinchOn ? rDist < PINCH_START : rDist < PINCH_END);
 
-    if (pinchDetectionEnabled && rDist < 0.02) {
+    if (rightPinching) {
       rPinchSphere.position.copy(rThumbObj.position);
       rPinchSphere.rotation.copy(rThumbObj.rotation);
       rPinchOn = true;
