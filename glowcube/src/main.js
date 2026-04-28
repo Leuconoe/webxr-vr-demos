@@ -32,7 +32,7 @@ let previousTime = 0;
 const PINCH_START = 0.022;
 const PINCH_END = 0.035;
 const MAX_SPAWNED_CUBES = 50;
-const FLOOR_HEIGHT = 1.0;
+const FLOOR_HEIGHT = 0.01;
 const DEBUG_XR = new URLSearchParams(window.location.search).has('debug');
 
 // -----------------------------------------------------------------------------
